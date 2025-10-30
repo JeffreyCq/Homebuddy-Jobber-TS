@@ -1,3 +1,4 @@
+// src/server.ts
 import express from "express";
 import dotenv from "dotenv";
 import routes from "./routes/index.js";
@@ -7,7 +8,8 @@ dotenv.config();
 
 const app = express();
 
-// Raw body for Jobber webhooks ONLY
+app.use(express.static("public"));
+
 app.use("/webhooks/jobber", bodyParser.raw({ type: "*/*" }));
 
 // JSON for the rest

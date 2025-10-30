@@ -1,3 +1,4 @@
+// src/features/auth/oauth.controller.ts
 import type { Request, Response } from "express";
 import axios from "axios";
 import crypto from "crypto";
@@ -38,22 +39,73 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
 
     const accountId: string = accountResp.data.data.account.id;
 
-    // Generate an inboundKey for security (optional)
+    // ✅ Genera inboundKey y guarda todo
     const inboundKey = Buffer.from(crypto.randomBytes(16)).toString("hex");
 
     await repo.save({
       accountId,
       accessToken: access_token,
       refreshToken: refresh_token,
+      inboundKey,
       updatedAt: new Date(),
-      // You can extend the repo to persist inboundKey too
     });
 
+    const inboundUrl = `${baseUrl}/jobber/inbound/${accountId}/${inboundKey}`;
+
+    // ✅ HTML “Connected” con copiar al portapapeles
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(`
-      ✅ HomeBuddy x Jobber connected!<br/>
-      Account ID: <b>${accountId}</b><br/>
-      Send leads to:<br/>
-      <code>${baseUrl}/jobber/inbound/${accountId}/${inboundKey}</code>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Connected — HomeBuddy × Jobber</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/mvp.css" />
+</head>
+<body>
+  <main>
+    <h1>✅ Connected</h1>
+    <p>Your Jobber account is now linked.</p>
+
+    <h3>Account ID</h3>
+    <code>${accountId}</code>
+
+    <h3>Inbound URL</h3>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <code id="url">${inboundUrl}</code>
+      <button onclick="copy()">Copy URL</button>
+    </div>
+
+    <details>
+      <summary>How to test</summary>
+      <pre>curl -X POST "${inboundUrl}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "firstName":"Jane",
+    "lastName":"Doe",
+    "email":"jane@example.com",
+    "phone":"5551238888",
+    "city":"Austin",
+    "zip":"78701",
+    "description":"Window cleaning lead from HomeBuddy"
+  }'</pre>
+    </details>
+
+    <form method="post" action="/disconnect/${accountId}" onsubmit="return confirm('Disconnect this app?');">
+      <button type="submit" style="background:#c0392b">Disconnect</button>
+    </form>
+
+    <p><a href="/">Back to Home</a></p>
+  </main>
+  <script>
+    function copy(){
+      const t = document.getElementById('url').innerText;
+      navigator.clipboard.writeText(t).then(()=>alert('Copied!'));
+    }
+  </script>
+</body>
+</html>
     `);
   } catch (e) {
     res.status(500).send("OAuth error");

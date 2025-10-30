@@ -1,7 +1,9 @@
+// src/repositories/accounts.repo.ts
 export interface AccountTokens {
   accountId: string;
   accessToken: string;
   refreshToken: string;
+  inboundKey: string;      // <-- agregado
   updatedAt: Date;
 }
 
