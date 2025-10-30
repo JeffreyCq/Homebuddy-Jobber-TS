@@ -1,17 +1,37 @@
-// src/features/auth/oauth.controller.ts
 import type { Request, Response } from "express";
 import axios from "axios";
 import crypto from "crypto";
 import { AccountsRepo } from "../../repositories/accounts.repo.js";
 
+function sendHtmlError(res: Response, tag: string, err: any) {
+  const status = err?.response?.status;
+  const data = err?.response?.data;
+  const msg = err?.message || String(err);
+  res
+    .status(500)
+    .set("Content-Type", "text/html; charset=utf-8")
+    .send(`
+<!doctype html><html><body>
+<h2>OAuth error @ ${tag}</h2>
+<pre>${msg}</pre>
+<h3>status</h3>
+<pre>${status ?? "n/a"}</pre>
+<h3>response</h3>
+<pre>${data ? JSON.stringify(data, null, 2) : "n/a"}</pre>
+</body></html>
+`);
+}
+
 export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: Response) => {
   const code = req.query.code as string | undefined;
   if (!code) return res.status(400).send("Missing code");
 
-  const baseUrl =
+  let baseUrl =
     (process.env.APP_BASE_URL && process.env.APP_BASE_URL.trim()) ||
     `${req.protocol}://${req.get("host")}`;
+  if (!baseUrl.startsWith("http")) baseUrl = `https://${baseUrl}`;
 
+  // 1) TOKEN EXCHANGE
   const form = new URLSearchParams({
     grant_type: "authorization_code",
     code,
@@ -20,12 +40,24 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
     redirect_uri: `${baseUrl}/oauth/callback`,
   });
 
+  let access_token: string;
+  let refresh_token: string;
+
   try {
     const tokenResp = await axios.post("https://api.getjobber.com/api/oauth/token", form, {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" }
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      timeout: 15000,
     });
-    const { access_token, refresh_token } = tokenResp.data;
+    access_token = tokenResp.data.access_token;
+    refresh_token = tokenResp.data.refresh_token;
+  } catch (e) {
+    return sendHtmlError(res, "token_exchange_failed", e);
+  }
 
+  // 2) GRAPHQL ACCOUNT
+  let accountId: string;
+  let accountName: string | undefined;
+  try {
     const accountResp = await axios.post(
       "https://api.getjobber.com/api/graphql",
       { query: "{ account { id name } }" },
@@ -33,28 +65,40 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
         headers: {
           Authorization: `Bearer ${access_token}`,
           "X-JOBBER-GRAPHQL-VERSION": process.env.JOBBER_GRAPHQL_VERSION!,
+          "Content-Type": "application/json",
         },
+        timeout: 15000,
       }
     );
 
-    const accountId: string = accountResp.data.data.account.id;
+    if (accountResp.data?.errors?.length) {
+      throw new Error("GraphQL top-level errors: " + JSON.stringify(accountResp.data.errors));
+    }
+    accountId = accountResp.data?.data?.account?.id;
+    accountName = accountResp.data?.data?.account?.name;
+    if (!accountId) throw new Error("account.id missing in GraphQL response");
+  } catch (e) {
+    return sendHtmlError(res, "account_query_failed", e);
+  }
 
-    // ✅ Genera inboundKey y guarda todo
-    const inboundKey = Buffer.from(crypto.randomBytes(16)).toString("hex");
-
+  // 3) SAVE TO DB
+  const inboundKey = crypto.randomBytes(16).toString("hex");
+  try {
     await repo.save({
       accountId,
-      accessToken: access_token,
-      refreshToken: refresh_token,
+      accessToken: access_token!,
+      refreshToken: refresh_token!,
       inboundKey,
       updatedAt: new Date(),
     });
+  } catch (e) {
+    return sendHtmlError(res, "db_save_failed", e);
+  }
 
-    const inboundUrl = `${baseUrl}/jobber/inbound/${accountId}/${inboundKey}`;
-
-    // ✅ HTML “Connected” con copiar al portapapeles
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(`
+  // ✅ SUCCESS PAGE
+  const inboundUrl = `${baseUrl}/jobber/inbound/${accountId}/${inboundKey}`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`
 <!doctype html>
 <html>
 <head>
@@ -66,10 +110,7 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
 <body>
   <main>
     <h1>✅ Connected</h1>
-    <p>Your Jobber account is now linked.</p>
-
-    <h3>Account ID</h3>
-    <code>${accountId}</code>
+    <p>Account: <b>${accountName ?? ""}</b> (<code>${accountId}</code>)</p>
 
     <h3>Inbound URL</h3>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -78,7 +119,7 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
     </div>
 
     <details>
-      <summary>How to test</summary>
+      <summary>Test with curl</summary>
       <pre>curl -X POST "${inboundUrl}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -89,7 +130,8 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
     "city":"Austin",
     "zip":"78701",
     "description":"Window cleaning lead from HomeBuddy"
-  }'</pre>
+  }'
+</pre>
     </details>
 
     <form method="post" action="/disconnect/${accountId}" onsubmit="return confirm('Disconnect this app?');">
@@ -106,8 +148,5 @@ export const oauthCallback = (repo: AccountsRepo) => async (req: Request, res: R
   </script>
 </body>
 </html>
-    `);
-  } catch (e) {
-    res.status(500).send("OAuth error");
-  }
+`);
 };
