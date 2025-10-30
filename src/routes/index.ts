@@ -4,14 +4,17 @@ import { oauthCallback } from "../features/auth/oauth.controller.js";
 import { inboundLead } from "../features/leads/inbound.controller.js";
 import { jobberWebhookHandler } from "../features/webhooks/jobberWebhooks.controller.js";
 import { appDisconnect } from "../features/auth/disconnect.controller.js";
-import { InMemoryAccountsRepo } from "../repositories/accounts.repo.js";
+import { PgAccountsRepo } from "../repositories/accounts.repo.js";
 
-const repo = InMemoryAccountsRepo();
+const repo = PgAccountsRepo(); 
 const r = Router();
 
-// ✅ Connect: construye authorize URL y redirige
 r.get("/connect", (_req, res) => {
-  const baseUrl = process.env.APP_BASE_URL!;
+  let baseUrl = process.env.APP_BASE_URL || "";
+  if (!baseUrl.startsWith("http")) {
+    baseUrl = `https://${baseUrl.replace(/^\/+/, "")}`;
+  }
+
   const authorizeUrl = new URL("https://api.getjobber.com/api/oauth/authorize");
   authorizeUrl.searchParams.set("client_id", process.env.JOBBER_CLIENT_ID!);
   authorizeUrl.searchParams.set("redirect_uri", `${baseUrl}/oauth/callback`);
