@@ -37,16 +37,17 @@ r.post("/webhooks/jobber", jobberWebhookHandler(repo));
 r.post("/disconnect/:accountId", appDisconnect(repo));
 
 /* -------------------------------------------------------------------------- */
-/* 🛠️ NIKOLAY'S STATIC PAGES FOR APP REVIEW                                  */
+/* 🛠️ NIKOLAY'S STATIC PAGES (Updated: Query Params & CRM Paths)             */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Connected Page
- * Expected GET: /connect/:accountId/:connectId/:contactEmail
+ * Expected GET: /crm/jobber/connected?connect_id=foo&account_name=bar&contact_email=manager%40homebuddy.com
  */
-r.get("/connect/:accountId/:connectId/:contactEmail", (req, res) => {
-  const { accountId, connectId, contactEmail } = req.params;
-  const accountName = accountId; // Fallback since name isn't in the URL
+r.get("/crm/jobber/connected", (req, res) => {
+  const connectId = (req.query.connect_id as string) || "";
+  const accountName = (req.query.account_name as string) || "";
+  const contactEmail = (req.query.contact_email as string) || "";
 
   res.send(`
 <!doctype html>
@@ -60,7 +61,7 @@ r.get("/connect/:accountId/:connectId/:contactEmail", (req, res) => {
 <body>
   <main>
     <h1>✅ Connected</h1>
-    <p>Account: <b>${accountName}</b> (<code>${accountId}</code>)</p>
+    <p>Account: <b>${accountName}</b></p>
     <p>Connect ID: <b>${connectId}</b></p>
 
     <h3>Please reach our Account Manager and provide your Connect ID.</h3>
@@ -69,8 +70,8 @@ r.get("/connect/:accountId/:connectId/:contactEmail", (req, res) => {
       <button onclick="copy()">Copy email</button>
     </div>
 
-    <form method="post" action="https://api-zeta.stage.sirenltd.dev/v1/external/jobber/disconnect/${accountId}/${connectId}/${contactEmail}" onsubmit="return confirm('Disconnect this app?');">
-      <button type="submit" style="background:#c0392b; border-color:#c0392b; color: white;">Disconnect</button>
+    <form method="post" action="https://api-zeta.stage.sirenltd.dev/v1/external/jobber/disconnect/${accountName}/${connectId}/${contactEmail}" onsubmit="return confirm('Disconnect this app?');">
+      <button type="submit" style="background:#c0392b; border-color:#c0392b; color: white; cursor: pointer;">Disconnect</button>
     </form>
   </main>
   <script>
@@ -86,10 +87,11 @@ r.get("/connect/:accountId/:connectId/:contactEmail", (req, res) => {
 
 /**
  * Disconnected Page
- * Expected GET: /disconnect/:accountId
+ * Expected GET: /crm/jobber/disconnected?connect_id=foo&account_name=bar
  */
-r.get("/disconnect/:accountId", (req, res) => {
-  const { accountId } = req.params;
+r.get("/crm/jobber/disconnected", (req, res) => {
+  const accountName = (req.query.account_name as string) || "Account";
+
   res.send(`
 <!doctype html>
 <html>
@@ -102,7 +104,7 @@ r.get("/disconnect/:accountId", (req, res) => {
 <body>
   <main>
     <h1>❌ Disconnected</h1>
-    <p>The account <code>${accountId}</code> has been successfully disconnected.</p>
+    <p>The account <b>${accountName}</b> has been successfully disconnected.</p>
     <p>You may now close this window.</p>
   </main>
 </body>
@@ -111,10 +113,9 @@ r.get("/disconnect/:accountId", (req, res) => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* 🔍 DEBUG ROUTES                              */
+/* 🔍 DEBUG ROUTES                                                            */
 /* -------------------------------------------------------------------------- */
 
-// Test de conexión a Postgres
 const testPool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -129,7 +130,6 @@ r.get("/debug/db", async (_req, res) => {
   }
 });
 
-// Verifica si las variables de entorno están cargadas correctamente
 r.get("/debug/env", (_req, res) => {
   res.json({
     hasClientId: !!process.env.JOBBER_CLIENT_ID,
