@@ -37,12 +37,12 @@ r.post("/webhooks/jobber", jobberWebhookHandler(repo));
 r.post("/disconnect/:accountId", appDisconnect(repo));
 
 /* -------------------------------------------------------------------------- */
-/* 🛠️ NIKOLAY'S STATIC PAGES (Updated: Query Params & CRM Paths)             */
+/* 🛠️ NIKOLAY'S STATIC PAGES (Query Params & Simplified Disconnect Link)      */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Connected Page
- * Expected GET: /crm/jobber/connected?connect_id=foo&account_name=bar&contact_email=manager%40homebuddy.com
+ * GET: /crm/jobber/connected?connect_id=...&account_name=...&contact_email=...
  */
 r.get("/crm/jobber/connected", (req, res) => {
   const connectId = (req.query.connect_id as string) || "";
@@ -70,7 +70,7 @@ r.get("/crm/jobber/connected", (req, res) => {
       <button onclick="copy()">Copy email</button>
     </div>
 
-    <form method="post" action="https://api-zeta.stage.sirenltd.dev/v1/external/jobber/disconnect/${accountName}/${connectId}/${contactEmail}" onsubmit="return confirm('Disconnect this app?');">
+    <form method="post" action="https://api-zeta.stage.sirenltd.dev/v1/external/jobber/disconnect/${connectId}" onsubmit="return confirm('Disconnect this app?');">
       <button type="submit" style="background:#c0392b; border-color:#c0392b; color: white; cursor: pointer;">Disconnect</button>
     </form>
   </main>
@@ -87,7 +87,7 @@ r.get("/crm/jobber/connected", (req, res) => {
 
 /**
  * Disconnected Page
- * Expected GET: /crm/jobber/disconnected?connect_id=foo&account_name=bar
+ * GET: /crm/jobber/disconnected?connect_id=...&account_name=...
  */
 r.get("/crm/jobber/disconnected", (req, res) => {
   const accountName = (req.query.account_name as string) || "Account";
